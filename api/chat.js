@@ -1,10 +1,8 @@
 // This file becomes a live web address automatically once deployed on Vercel:
 // https://YOUR-PROJECT-NAME.vercel.app/api/chat
 //
-// It receives chat messages from your ledger app, adds the shop's instructions
-// and your secret OpenAI API key (which lives safely in Vercel's settings,
-// never here), asks the AI, and sends the answer back. Your key is never
-// visible to anyone using the app.
+// Uses Google's Gemini API, which has a free tier — no credit card needed.
+// Your secret key lives safely in Vercel's settings, never in this file.
 
 const SYSTEM_PROMPT = `You are "Ledger AI", a bilingual assistant embedded in a Pakistani furniture & mattress workshop's stock/billing app. Shop owners write to you in English, Urdu script, or Roman Urdu, and sometimes their speech is transcribed to text before it reaches you, so expect informal, run-on phrasing. Always reply in the same language and script the user just used: Urdu script in -> Urdu script out, Roman Urdu in -> Roman Urdu out, English in -> English out.
 
@@ -26,13 +24,11 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Browsers send a quick "permission check" (OPTIONS) before the real POST — answer it here.
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Only allow requests from your app, sent as POST
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Only POST requests are allowed here.' });
     return;
@@ -44,36 +40,44 @@ export default async function handler(req, res) {
     return;
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    res.status(500).json({ error: 'Server is missing OPENAI_API_KEY. Add it in your Vercel project settings under Environment Variables.' });
+  if (!process.env.GEMINI_API_KEY) {
+    res.status(500).json({ error: 'Server is missing GEMINI_API_KEY. Add it in your Vercel project settings under Environment Variables.' });
     return;
   }
 
+  // Gemini calls the assistant's turns "model" instead of "assistant".
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
   try {
-    // Uses OpenAI's Responses API, which supports a built-in web_search tool.
-    const openaiResponse = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o', // change this to whichever model your OpenAI plan/key has access to
-        instructions: SYSTEM_PROMPT,
-        input: messages, // [{role:'user'|'assistant', content:'...'}, ...]
-        tools: [{ type: 'web_search' }]
-      })
-    });
+    const geminiResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': process.env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          tools: [{ google_search: {} }]
+        })
+      }
+    );
 
-    const data = await openaiResponse.json();
+    const data = await geminiResponse.json();
 
-    if (!openaiResponse.ok) {
-      res.status(openaiResponse.status).json({ error: data?.error?.message || 'The AI service returned an error.' });
+    if (!geminiResponse.ok) {
+      res.status(geminiResponse.status).json({ error: data?.error?.message || 'The AI service returned an error.' });
       return;
     }
 
-    // Responses API gives a ready-made plain-text answer in output_text.
-    res.status(200).json({ reply: data.output_text || '(no reply — please try again)' });
+    const parts = data?.candidates?.[0]?.content?.parts || [];
+    const reply = parts.map(p => p.text || '').filter(Boolean).join('\n');
+    res.status(200).json({ reply: reply || '(no reply — please try again)' });
   } catch (err) {
     res.status(500).json({ error: 'Could not reach the AI service. Please try again.' });
   }
