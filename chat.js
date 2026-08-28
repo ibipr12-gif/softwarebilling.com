@@ -21,6 +21,17 @@ Omit "costPricePercent" if a cost was given directly instead of as a percent. Om
 Keep replies short and practical - this is a busy shopkeeper, not an essay.`;
 
 export default async function handler(req, res) {
+  // Allow your HTML file (running from your computer or any domain) to call this backend.
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Browsers send a quick "permission check" (OPTIONS) before the real POST — answer it here.
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
   // Only allow requests from your app, sent as POST
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Only POST requests are allowed here.' });
