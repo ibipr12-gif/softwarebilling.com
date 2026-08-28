@@ -1,0 +1,6 @@
+{
+  "name": "ledger-ai-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend for Workshop Ledger AI (OpenAI version) — keeps the API key private and forwards chat requests from the ledger app."
+}
